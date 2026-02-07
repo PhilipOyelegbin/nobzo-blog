@@ -24,21 +24,77 @@ async function createBlog(req, res) {
   }
 }
 
+// async function fetchBlogs(req, res) {
+//   const page = parseInt(req.query.page) || 1;
+//   const limit = parseInt(req.query.limit) || 12;
+//   const skip = (page - 1) * limit;
+//   const query = { deletedAt: null };
+
+//   // query conditionals
+//   if (req.user && req.query.status) {
+//     if (req.query.status === "draft" || req.user.id === req.query.author) {
+//       console.log(req.user.id, req.query.author);
+//       query.status = "draft";
+//       // query.author = req.user.id;
+//     } else {
+//       query.status = req.query.status;
+//     }
+//   } else {
+//     query.status = "published";
+//   }
+
+//   if (req.query.search) {
+//     query.$or = [
+//       { title: { $regex: req.query.search, $options: "i" } },
+//       { content: { $regex: req.query.search, $options: "i" } },
+//     ];
+//   }
+
+//   if (req.query.tag) {
+//     query.tags = req.query.tag;
+//   }
+
+//   if (req.query.author) {
+//     query.author = req.query.author;
+//   }
+
+//   try {
+//     console.log("Querying posts with:", query);
+//     const [posts, total] = await Promise.all([
+//       Post.find(query)
+//         .populate("author", "-password")
+//         .sort({ createdAt: -1 })
+//         .skip(skip)
+//         .limit(limit),
+//       Post.countDocuments(query),
+//     ]);
+
+//     res.status(200).json({
+//       message: "Posts fetched successfully",
+//       data: posts,
+//       pagination: {
+//         total,
+//         page,
+//         limit,
+//         totalPages: Math.ceil(total / limit),
+//       },
+//     });
+//   } catch (error) {
+//     res
+//       .status(500)
+//       .json({ message: "Internal server error", error: error.message });
+//   }
+// }
+
 async function fetchBlogs(req, res) {
   const page = parseInt(req.query.page) || 1;
   const limit = parseInt(req.query.limit) || 12;
   const skip = (page - 1) * limit;
   const query = { deletedAt: null };
 
-  // query conditionals
-  if (req.user && req.query.status) {
-    if (req.query.status === "draft" || req.user.id === req.query.author) {
-      console.log(req.user.id, req.query.author);
-      query.status = "draft";
-      // query.author = req.user.id;
-    } else {
-      query.status = req.query.status;
-    }
+  // query logic
+  if (req.query.status) {
+    query.status = req.query.status;
   } else {
     query.status = "published";
   }
@@ -47,6 +103,7 @@ async function fetchBlogs(req, res) {
     query.$or = [
       { title: { $regex: req.query.search, $options: "i" } },
       { content: { $regex: req.query.search, $options: "i" } },
+      { excerpt: { $regex: req.query.search, $options: "i" } }, // Added excerpt search
     ];
   }
 
@@ -59,30 +116,51 @@ async function fetchBlogs(req, res) {
   }
 
   try {
-    console.log("Querying posts with:", query);
+    const postsQuery = Post.find(query)
+      .populate("author", "-password")
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit);
+
     const [posts, total] = await Promise.all([
-      Post.find(query)
-        .populate("author", "-password")
-        .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(limit),
+      postsQuery.exec(),
       Post.countDocuments(query),
     ]);
 
+    const filteredPosts = posts.map((post) => {
+      if (
+        post.status === "draft" &&
+        req.user &&
+        post.author.id.toString() !== req.user.id.toString()
+      ) {
+        return res
+          .status(403)
+          .json({ message: "Unauthorized to view this post" });
+      }
+      return post;
+    });
+
     res.status(200).json({
       message: "Posts fetched successfully",
-      data: posts,
+      data: filteredPosts,
       pagination: {
         total,
         page,
         limit,
         totalPages: Math.ceil(total / limit),
+        hasNextPage: page * limit < total,
+        hasPrevPage: page > 1,
       },
     });
   } catch (error) {
-    res
-      .status(500)
-      .json({ message: "Internal server error", error: error.message });
+    console.error("Error fetching blogs:", error);
+    res.status(500).json({
+      message: "Internal server error",
+      error:
+        process.env.NODE_ENV === "development"
+          ? error.message
+          : "Something went wrong",
+    });
   }
 }
 
