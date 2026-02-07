@@ -1,5 +1,5 @@
 import { signToken } from "../config/jwt.js";
-import { User } from "../models/index.js";
+import { Post, User } from "../models/index.js";
 import * as argon from "argon2";
 
 async function registerUser(req, res) {
@@ -107,6 +107,14 @@ async function deleteUser(req, res) {
       await User.findById(loggedInUserId).select("-password");
     if (!existingUser) {
       return res.status(404).json({ message: "User not found" });
+    }
+
+    const existingPost = await Post.find({ author: loggedInUserId });
+    if (existingPost.length > 0) {
+      return res.status(400).json({
+        message:
+          "Cannot delete user with existing posts. Please delete all user's posts first.",
+      });
     }
 
     await existingUser.deleteOne(existingUser);

@@ -32,7 +32,13 @@ async function fetchBlogs(req, res) {
 
   // query conditionals
   if (req.user && req.query.status) {
-    query.status = req.query.status;
+    if (req.query.status === "draft" || req.user.id === req.query.author) {
+      console.log(req.user.id, req.query.author);
+      query.status = "draft";
+      // query.author = req.user.id;
+    } else {
+      query.status = req.query.status;
+    }
   } else {
     query.status = "published";
   }
@@ -53,6 +59,7 @@ async function fetchBlogs(req, res) {
   }
 
   try {
+    console.log("Querying posts with:", query);
     const [posts, total] = await Promise.all([
       Post.find(query)
         .populate("author", "-password")
